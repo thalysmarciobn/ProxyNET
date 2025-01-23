@@ -92,6 +92,7 @@ jobs:
 
     - name: Upload Linux Artifact to Release
       uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
       with:
         files: ./compressed/linux-artifact.zip
       env:
@@ -99,6 +100,7 @@ jobs:
 
     - name: Upload Windows Artifact to Release
       uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
       with:
         files: ./compressed/windows-artifact.zip
       env:
