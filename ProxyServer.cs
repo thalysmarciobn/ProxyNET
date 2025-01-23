@@ -5,8 +5,16 @@ using Serilog;
 
 namespace ProxyNET;
 
+/// <summary>
+/// Represents a proxy server that listens for connections and forwards them to a target endpoint.
+/// </summary>
+/// <param name="config">The forwarding configuration containing the proxy and target address and port.</param>
 public class ProxyServer(ForwardingConfig config)
 {
+    /// <summary>
+    /// Starts the proxy server and begins listening for client connections.
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task StartAsync()
     {
         try
@@ -33,6 +41,12 @@ public class ProxyServer(ForwardingConfig config)
         }
     }
 
+    /// <summary>
+    /// Handles a client connection by creating a proxy session and running it.
+    /// </summary>
+    /// <param name="peer">The TCP client representing the connected client.</param>
+    /// <param name="forwardEndpoint">The endpoint to which the connection should be forwarded.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     private static async Task HandleClientAsync(TcpClient peer, IPEndPoint forwardEndpoint)
     {
         try

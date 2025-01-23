@@ -5,11 +5,20 @@ using Serilog;
 
 namespace ProxyNET;
 
+/// <summary>
+/// Represents a session for a proxy connection, handling data forwarding between a client and a proxy server.
+/// </summary>
+/// <param name="peer">The TCP client representing the connected client.</param>
+/// <param name="proxyEndpoint">The endpoint of the proxy server to connect to.</param>
 public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
 {
     private const int BufferSize = 8192;
     private static readonly ArrayPool<byte> BufferPool = ArrayPool<byte>.Shared;
 
+    /// <summary>
+    /// Runs the proxy session, establishing a connection to the proxy server and forwarding data between the client and the proxy.
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task RunAsync()
     {
         Log.Information("Peer connected: {RemoteAddr} -> {LocalAddr}", peer.Client.RemoteEndPoint,
@@ -38,6 +47,12 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
         await Task.WhenAny(peerToProxy, proxyToPeer);
     }
 
+    /// <summary>
+    /// Attempts to connect to the proxy server.
+    /// </summary>
+    /// <param name="proxy">The TCP client representing the proxy connection.</param>
+    /// <param name="proxyEndpoint">The endpoint of the proxy server.</param>
+    /// <returns>A task that represents the asynchronous operation, returning true if connected successfully; otherwise, false.</returns>
     private static async Task<bool> ProxyConnectedAsync(TcpClient proxy, IPEndPoint proxyEndpoint)
     {
         try
@@ -56,6 +71,13 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
         }
     }
 
+    /// <summary>
+    /// Forwards data from the source network stream to the destination network stream.
+    /// </summary>
+    /// <param name="source">The source network stream to read data from.</param>
+    /// <param name="destination">The destination network stream to write data to.</param>
+    /// <param name="direction">A string indicating the direction of data flow (e.g., "Peer -> Proxy").</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     private static async Task ForwardDataAsync(NetworkStream source, NetworkStream destination, string direction)
     {
         var buffer = BufferPool.Rent(BufferSize);
