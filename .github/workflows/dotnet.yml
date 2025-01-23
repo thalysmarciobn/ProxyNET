@@ -9,7 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET
@@ -34,11 +33,15 @@ jobs:
         dotnet-version: 9.0.x
     - name: Publish for Linux
       run: dotnet publish -c Release -r linux-x64 --self-contained true -o ./publish/linux
+    - name: Compress Linux Artifact
+      run: |
+        mkdir -p ./compressed
+        zip -r ./compressed/linux-artifact.zip ./publish/linux
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
         name: linux-artifact
-        path: ./publish/linux
+        path: ./compressed/linux-artifact.zip
 
   publish-windows:
     runs-on: windows-latest
@@ -51,11 +54,15 @@ jobs:
         dotnet-version: 9.0.x
     - name: Publish for Windows
       run: dotnet publish -c Release -r win-x64 --self-contained true -o ./publish/windows
+    - name: Compress Windows Artifact
+      run: |
+        mkdir -p ./compressed
+        zip -r ./compressed/windows-artifact.zip ./publish/windows
     - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
         name: windows-artifact
-        path: ./publish/windows
+        path: ./compressed/windows-artifact.zip
 
   create-release:
     runs-on: ubuntu-latest
@@ -65,13 +72,13 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: linux-artifact
-        path: ./publish/linux
+        path: ./compressed
 
     - name: Download Windows Artifact
       uses: actions/download-artifact@v4
       with:
         name: windows-artifact
-        path: ./publish/windows
+        path: ./compressed
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
@@ -87,7 +94,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.0
-        files: ./publish/linux/*
+        files: ./compressed/linux-artifact.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -95,6 +102,6 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.0
-        files: ./publish/windows/*
+        files: ./compressed/windows-artifact.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
