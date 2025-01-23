@@ -10,7 +10,9 @@ namespace ProxyNET;
 /// </summary>
 /// <param name="peer">The TCP client representing the connected client.</param>
 /// <param name="proxyEndpoint">The endpoint of the proxy server to connect to.</param>
-public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
+/// <param name="readTimeout">The timeout duration for reading data from the proxy server, in milliseconds.</param>
+/// <param name="writeTimeout">The timeout duration for writing data to the proxy server, in milliseconds.</param>
+public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint, int readTimeout, int writeTimeout)
 {
     private const int BufferSize = 8192;
     private static readonly ArrayPool<byte> BufferPool = ArrayPool<byte>.Shared;
@@ -42,6 +44,12 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
 
             await using var peerNetStream = peer.GetStream();
             await using var proxyNetStream = proxy.GetStream();
+            
+            peerNetStream.WriteTimeout = writeTimeout;
+            peerNetStream.ReadTimeout = readTimeout;
+            
+            proxyNetStream.WriteTimeout = writeTimeout;
+            proxyNetStream.ReadTimeout = readTimeout;
 
             var peerToProxy = ForwardDataAsync(peerNetStream, proxyNetStream, "Peer -> Proxy");
             var proxyToPeer = ForwardDataAsync(proxyNetStream, peerNetStream, "Proxy -> Peer");

@@ -47,11 +47,11 @@ public class ProxyServer(ForwardingConfig config)
     /// <param name="peer">The TCP client representing the connected client.</param>
     /// <param name="forwardEndpoint">The endpoint to which the connection should be forwarded.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
-    private static async Task HandleClientAsync(TcpClient peer, IPEndPoint forwardEndpoint)
+    private async Task HandleClientAsync(TcpClient peer, IPEndPoint forwardEndpoint)
     {
         try
         {
-            var session = new ProxySession(peer, forwardEndpoint);
+            var session = new ProxySession(peer, forwardEndpoint, config.ReadTimeout, config.WriteTimeout);
 
             await session.RunAsync();
         }
