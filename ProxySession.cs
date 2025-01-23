@@ -4,7 +4,7 @@ using Serilog;
 
 namespace ProxyNET;
 
-public class Session(TcpClient peer, IPEndPoint proxyEndpoint)
+public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
 {
     private const int BufferSize = 8192;
 
