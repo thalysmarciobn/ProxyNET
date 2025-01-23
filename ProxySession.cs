@@ -25,26 +25,37 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
             peer.Client.LocalEndPoint);
 
         var proxy = new TcpClient();
-
-        var isConnected = await ProxyConnectedAsync(proxy, proxyEndpoint);
-
-        if (!isConnected)
+        
+        try
         {
-            Log.Error("Could not connect to proxy");
+            var isConnected = await ProxyConnectedAsync(proxy, proxyEndpoint);
 
-            return;
+            if (!isConnected)
+            {
+                Log.Error("Could not connect to proxy");
+
+                return;
+            }
+
+            Log.Information("Proxy connected: {LocalAddr} -> {RemoteAddr}", proxy.Client.LocalEndPoint,
+                proxy.Client.RemoteEndPoint);
+
+            await using var peerNetStream = peer.GetStream();
+            await using var proxyNetStream = proxy.GetStream();
+
+            var peerToProxy = ForwardDataAsync(peerNetStream, proxyNetStream, "Peer -> Proxy");
+            var proxyToPeer = ForwardDataAsync(proxyNetStream, peerNetStream, "Proxy -> Peer");
+
+            await Task.WhenAny(peerToProxy, proxyToPeer);
         }
-
-        Log.Information("Proxy connected: {LocalAddr} -> {RemoteAddr}", proxy.Client.LocalEndPoint,
-            proxy.Client.RemoteEndPoint);
-
-        await using var peerNetStream = peer.GetStream();
-        await using var proxyNetStream = proxy.GetStream();
-
-        var peerToProxy = ForwardDataAsync(peerNetStream, proxyNetStream, "Peer -> Proxy");
-        var proxyToPeer = ForwardDataAsync(proxyNetStream, peerNetStream, "Proxy -> Peer");
-
-        await Task.WhenAny(peerToProxy, proxyToPeer);
+        catch (Exception e)
+        {
+            Log.Debug(e, "Error processing connection");
+        }
+        finally
+        {
+            proxy.Dispose();
+        }
     }
 
     /// <summary>
@@ -64,10 +75,6 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
         catch (SocketException)
         {
             return false;
-        }
-        finally
-        {
-            proxy.Dispose();
         }
     }
 
