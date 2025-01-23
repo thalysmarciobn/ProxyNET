@@ -23,46 +23,35 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint, int readTime
     /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task RunAsync()
     {
-        Log.Information("Peer connected: {RemoteAddr} -> {LocalAddr}", peer.Client.RemoteEndPoint,
-            peer.Client.LocalEndPoint);
+        Log.Information("Peer connected: {RemoteAddr} -> {LocalAddr}", peer.Client.RemoteEndPoint, peer.Client.LocalEndPoint);
 
-        var proxy = new TcpClient();
-        
+        using var proxy = new TcpClient();
+
         try
         {
-            var isConnected = await ProxyConnectedAsync(proxy, proxyEndpoint);
-
-            if (!isConnected)
+            if (!await TryConnectToProxyAsync(proxy, proxyEndpoint))
             {
-                Log.Error("Could not connect to proxy");
-
+                Log.Error("Failed to connect to proxy at {ProxyEndpoint}", proxyEndpoint);
                 return;
             }
 
-            Log.Information("Proxy connected: {LocalAddr} -> {RemoteAddr}", proxy.Client.LocalEndPoint,
-                proxy.Client.RemoteEndPoint);
+            Log.Information("Proxy connected: {LocalAddr} -> {RemoteAddr}", proxy.Client.LocalEndPoint, proxy.Client.RemoteEndPoint);
 
-            await using var peerNetStream = peer.GetStream();
-            await using var proxyNetStream = proxy.GetStream();
-            
-            peerNetStream.WriteTimeout = writeTimeout;
-            peerNetStream.ReadTimeout = readTimeout;
-            
-            proxyNetStream.WriteTimeout = writeTimeout;
-            proxyNetStream.ReadTimeout = readTimeout;
+            await using var peerStream = peer.GetStream();
+            await using var proxyStream = proxy.GetStream();
 
-            var peerToProxy = ForwardDataAsync(peerNetStream, proxyNetStream, "Peer -> Proxy");
-            var proxyToPeer = ForwardDataAsync(proxyNetStream, peerNetStream, "Proxy -> Peer");
+            ConfigureStreamTimeouts(peerStream, readTimeout, writeTimeout);
+            ConfigureStreamTimeouts(proxyStream, readTimeout, writeTimeout);
 
-            await Task.WhenAny(peerToProxy, proxyToPeer);
+            var peerToProxyTask = ForwardDataAsync(peerStream, proxyStream, "Peer -> Proxy");
+            var proxyToPeerTask = ForwardDataAsync(proxyStream, peerStream, "Proxy -> Peer");
+
+            // Wait for either of the tasks to complete
+            await Task.WhenAny(peerToProxyTask, proxyToPeerTask);
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            Log.Debug(e, "Error processing connection");
-        }
-        finally
-        {
-            proxy.Dispose();
+            Log.Error(ex, "An error occurred during the proxy session");
         }
     }
 
@@ -72,18 +61,32 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint, int readTime
     /// <param name="proxy">The TCP client representing the proxy connection.</param>
     /// <param name="proxyEndpoint">The endpoint of the proxy server.</param>
     /// <returns>A task that represents the asynchronous operation, returning true if connected successfully; otherwise, false.</returns>
-    private static async Task<bool> ProxyConnectedAsync(TcpClient proxy, IPEndPoint proxyEndpoint)
+    private static async Task<bool> TryConnectToProxyAsync(TcpClient proxy, IPEndPoint proxyEndpoint)
     {
         try
         {
             await proxy.ConnectAsync(proxyEndpoint.Address, proxyEndpoint.Port);
-
+            
             return true;
         }
-        catch (SocketException)
+        catch (SocketException ex)
         {
+            Log.Warning(ex, "Failed to connect to proxy at {ProxyEndpoint}. SocketErrorCode: {SocketErrorCode}", proxyEndpoint, ex.SocketErrorCode);
+            
             return false;
         }
+    }
+
+    /// <summary>
+    /// Configures timeouts for a network stream.
+    /// </summary>
+    /// <param name="stream">The network stream to configure.</param>
+    /// <param name="readTimeout">Read timeout in milliseconds.</param>
+    /// <param name="writeTimeout">Write timeout in milliseconds.</param>
+    private static void ConfigureStreamTimeouts(NetworkStream stream, int readTimeout, int writeTimeout)
+    {
+        stream.ReadTimeout = readTimeout;
+        stream.WriteTimeout = writeTimeout;
     }
 
     /// <summary>
@@ -102,25 +105,25 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint, int readTime
             while (true)
             {
                 var bytesRead = await source.ReadAsync(buffer.AsMemory(0, BufferSize));
-
+                
                 if (bytesRead <= 0)
                 {
-                    Log.Information("{Direction}: Connection closed", direction);
-
+                    Log.Information("{Direction}: Connection closed by the source", direction);
                     break;
                 }
 
                 await destination.WriteAsync(buffer.AsMemory(0, bytesRead));
-
-                Log.Debug("{Direction}: Forwarded {NumBytes} bytes", direction, bytesRead);
+                
+                Log.Debug("{Direction}: Forwarded {Bytes} bytes", direction, bytesRead);
             }
         }
-        catch (SocketException ex)
+        catch (IOException ioEx) when (ioEx.InnerException is SocketException socketEx)
         {
-            Log.Error(ex, "{Direction}: SocketException occurred. SocketErrorCode: {SocketErrorCode}", direction,
-                ex.SocketErrorCode);
-            if (ex.SocketErrorCode is SocketError.OperationAborted or SocketError.Shutdown)
-                Log.Warning("{Direction}: Socket operation was aborted or connection shut down", direction);
+            Log.Warning(socketEx, "{Direction}: SocketException occurred. ErrorCode: {ErrorCode}", direction, socketEx.SocketErrorCode);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "{Direction}: Unexpected error while forwarding data", direction);
         }
         finally
         {

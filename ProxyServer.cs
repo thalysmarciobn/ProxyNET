@@ -22,22 +22,28 @@ public class ProxyServer(ForwardingConfig config)
             var listenEndpoint = new IPEndPoint(IPAddress.Parse(config.Address), config.Port);
             var forwardEndpoint = new IPEndPoint(IPAddress.Parse(config.Forward.Address), config.Forward.Port);
 
-            var listener = new TcpListener(listenEndpoint);
+            using var listener = new TcpListener(listenEndpoint);
             listener.Start();
 
-            Log.Information("Proxy on {ListenEndpoint}, forwarding to {ForwardEndpoint}", listenEndpoint,
-                forwardEndpoint);
+            Log.Information("Proxy started on {ListenEndpoint}, forwarding to {ForwardEndpoint}", listenEndpoint, forwardEndpoint);
 
             while (true)
             {
-                var peer = await listener.AcceptTcpClientAsync();
+                try
+                {
+                    var client = await listener.AcceptTcpClientAsync();
 
-                _ = HandleClientAsync(peer, forwardEndpoint);
+                    _ = Task.Run(() => HandleClientAsync(client, forwardEndpoint));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Error accepting client connection.");
+                }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            Log.Error("Could not start the proxy {Proxy}:{Port}", config.Address, config.Port);
+            Log.Fatal(ex, "Failed to start the proxy on {Address}:{Port}", config.Address, config.Port);
         }
     }
 
@@ -58,10 +64,6 @@ public class ProxyServer(ForwardingConfig config)
         catch (Exception ex)
         {
             Log.Error(ex, "Encountered an exception");
-        }
-        finally
-        {
-            peer.Dispose();
         }
     }
 }
