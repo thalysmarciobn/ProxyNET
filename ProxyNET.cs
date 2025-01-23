@@ -1,6 +1,5 @@
 ﻿using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
 using ProxyNET;
 using Serilog;
@@ -36,8 +35,21 @@ while (true)
 {
     var peer = await listener.AcceptTcpClientAsync();
 
-    _ = Task.Run(() =>
+    _ = Task.Run(async () =>
     {
-        var session = new Session(peer, forwardEndpoint);
+        try
+        {
+            var session = new Session(peer, forwardEndpoint);
+
+            await session.RunAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Encountered an exception");
+        }
+        finally
+        {
+            peer.Dispose();
+        }
     });
 }
