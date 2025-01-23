@@ -8,7 +8,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -35,7 +34,6 @@ jobs:
         dotnet-version: 9.0.x
     - name: Publish for Linux
       run: dotnet publish -c Release -r linux-x64 --self-contained true -o ./publish/linux
-
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -53,7 +51,6 @@ jobs:
         dotnet-version: 9.0.x
     - name: Publish for Windows
       run: dotnet publish -c Release -r win-x64 --self-contained true -o ./publish/windows
-
     - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -64,6 +61,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: [publish-linux, publish-windows]
     steps:
+    - name: Download Linux Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-artifact
+        path: ./publish/linux
+
+    - name: Download Windows Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-artifact
+        path: ./publish/windows
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
