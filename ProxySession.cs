@@ -50,6 +50,10 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
         {
             return false;
         }
+        finally
+        {
+            proxy.Dispose();
+        }
     }
 
     private static async Task ForwardDataAsync(NetworkStream source, NetworkStream destination, string direction)
