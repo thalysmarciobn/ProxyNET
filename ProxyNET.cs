@@ -1,6 +1,8 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
+using ProxyNET;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration().MinimumLevel.Debug()
@@ -13,12 +15,29 @@ var builder = new ConfigurationBuilder()
 
 var configuration = builder.Build();
 
-
 var addr = IPAddress.Parse(configuration.GetValue<string>("Address")!);
 var port = configuration.GetValue<int>("Port");
 
+var forwardConfig = configuration.GetSection("Forward");
+
+var forwardAddr = IPAddress.Parse(forwardConfig.GetValue<string>("Address")!);
+var forwardPort = forwardConfig.GetValue<int>("Port");
+
 var listenEndpoint = new IPEndPoint(addr, port);
+var forwardEndpoint = new IPEndPoint(forwardAddr, forwardPort);
 
 var listener = new TcpListener(listenEndpoint);
 
-Console.WriteLine($"Listening on port {port}");
+listener.Start();
+
+Log.Information("Proxy on {ListenEndpoint}, forwarding to {ForwardEndpoint}", listenEndpoint, forwardEndpoint);
+
+while (true)
+{
+    var peer = await listener.AcceptTcpClientAsync();
+
+    _ = Task.Run(() =>
+    {
+        var session = new Session(peer, forwardEndpoint);
+    });
+}
