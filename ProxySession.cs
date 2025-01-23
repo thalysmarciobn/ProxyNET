@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
 using Serilog;
@@ -7,6 +8,7 @@ namespace ProxyNET;
 public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
 {
     private const int BufferSize = 8192;
+    private static readonly ArrayPool<byte> BufferPool = ArrayPool<byte>.Shared;
 
     public async Task RunAsync()
     {
@@ -52,13 +54,13 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
 
     private static async Task ForwardDataAsync(NetworkStream source, NetworkStream destination, string direction)
     {
-        var buffer = new byte[BufferSize];
+        var buffer = BufferPool.Rent(BufferSize);
 
         try
         {
             while (true)
             {
-                var bytesRead = await source.ReadAsync(buffer);
+                var bytesRead = await source.ReadAsync(buffer.AsMemory(0, BufferSize));
 
                 if (bytesRead <= 0)
                 {
@@ -78,6 +80,10 @@ public class ProxySession(TcpClient peer, IPEndPoint proxyEndpoint)
                 ex.SocketErrorCode);
             if (ex.SocketErrorCode is SocketError.OperationAborted or SocketError.Shutdown)
                 Log.Warning("{Direction}: Socket operation was aborted or connection shut down", direction);
+        }
+        finally
+        {
+            BufferPool.Return(buffer);
         }
     }
 }
