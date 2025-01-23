@@ -1,0 +1,1 @@
+![Diagrama Proxy](https://github.com/thalysmarciobn/ProxyNET/blob/main/diag.png?raw=true "Diagrama")
