@@ -3,21 +3,51 @@ using ProxyNET;
 using ProxyNET.Configuration;
 using Serilog;
 
-Log.Logger = new LoggerConfiguration().MinimumLevel.Debug()
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
     .WriteTo.Console(
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
-var builder = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json");
+try
+{
+    var configuration = new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json")
+        .Build();
+    
+    var forwardingConfigs = configuration.GetSection("Forwarding").Get<List<ForwardingConfig>>();
 
-var configuration = builder.Build();
+    if (forwardingConfigs is null || forwardingConfigs.Count == 0)
+    {
+        Log.Warning("No forwarding configurations found.");
+        return;
+    }
+    
+    var tasks = forwardingConfigs.Select(async config =>
+    {
+        try
+        {
+            var proxyServer = new ProxyServer(config);
+            
+            await proxyServer.StartAsync();
+            
+            Log.Information("Proxy started on {Address}:{Port}", config.Address, config.Port);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to start proxy on {Address}:{Port}", config.Address, config.Port);
+        }
+    });
 
-var forwardingConfigs = configuration.GetSection("Forwarding").Get<List<ForwardingConfig>>();
-
-if (forwardingConfigs is null or []) return;
-
-foreach (var proxyServer in forwardingConfigs.Select(forwardConfig => new ProxyServer(forwardConfig)))
-    await Task.Run(async () => { await proxyServer.StartAsync(); });
-
-await Task.Delay(-1);
+    await Task.WhenAll(tasks);
+    
+    await Task.Delay(Timeout.Infinite);
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Unexpected error in the application");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
