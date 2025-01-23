@@ -2,14 +2,20 @@
 
 ## Visão Geral
 
-Este projeto implementa um servidor proxy TCP simples que encaminha dados entre um cliente e um servidor de destino. É projetado para ser leve e eficiente, utilizando programação assíncrona para lidar com múltiplas conexões simultaneamente. O servidor proxy escuta conexões TCP de entrada e encaminha os dados para um endpoint de destino especificado, sendo útil para diversas tarefas de rede, como depuração, monitoramento ou anonimização de tráfego.
+Este projeto implementa um servidor proxy TCP simples que encaminha dados entre um cliente e um servidor de destino. É
+projetado para ser leve e eficiente, utilizando programação assíncrona para lidar com múltiplas conexões
+simultaneamente. O servidor proxy escuta conexões TCP de entrada e encaminha os dados para um endpoint de destino
+especificado, sendo útil para diversas tarefas de rede, como depuração, monitoramento ou anonimização de tráfego.
 
 ## Funcionalidades
 
 - **Manipulação Assíncrona**: Utiliza programação assíncrona para lidar com múltiplas conexões de clientes sem bloqueio.
-- **Endpoints Configuráveis**: O endereço de escuta do servidor proxy e o endereço do servidor de destino podem ser configurados através de um arquivo JSON.
-- **Registro de Logs**: Integração de logging usando Serilog para fornecer informações detalhadas sobre as operações do proxy e quaisquer erros encontrados.
-- **Encaminhamento de Dados**: Encaminha dados de forma eficiente entre o cliente e o servidor de destino, com tratamento de erros para exceções de socket.
+- **Endpoints Configuráveis**: O endereço de escuta do servidor proxy e o endereço do servidor de destino podem ser
+  configurados através de um arquivo JSON.
+- **Registro de Logs**: Integração de logging usando Serilog para fornecer informações detalhadas sobre as operações do
+  proxy e quaisquer erros encontrados.
+- **Encaminhamento de Dados**: Encaminha dados de forma eficiente entre o cliente e o servidor de destino, com
+  tratamento de erros para exceções de socket.
 
 ## Tecnologias Utilizadas
 

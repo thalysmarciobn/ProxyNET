@@ -1,7 +1,6 @@
-﻿using System.Net;
-using System.Net.Sockets;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using ProxyNET;
+using ProxyNET.Configuration;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration().MinimumLevel.Debug()
@@ -14,42 +13,11 @@ var builder = new ConfigurationBuilder()
 
 var configuration = builder.Build();
 
-var addr = IPAddress.Parse(configuration.GetValue<string>("Address")!);
-var port = configuration.GetValue<int>("Port");
+var forwardingConfigs = configuration.GetSection("Forwarding").Get<List<ForwardingConfig>>();
 
-var forwardConfig = configuration.GetSection("Forward");
+if (forwardingConfigs is null or []) return;
 
-var forwardAddr = IPAddress.Parse(forwardConfig.GetValue<string>("Address")!);
-var forwardPort = forwardConfig.GetValue<int>("Port");
+foreach (var proxyServer in forwardingConfigs.Select(forwardConfig => new ProxyServer(forwardConfig)))
+    await Task.Run(async () => { await proxyServer.StartAsync(); });
 
-var listenEndpoint = new IPEndPoint(addr, port);
-var forwardEndpoint = new IPEndPoint(forwardAddr, forwardPort);
-
-var listener = new TcpListener(listenEndpoint);
-
-listener.Start();
-
-Log.Information("Proxy on {ListenEndpoint}, forwarding to {ForwardEndpoint}", listenEndpoint, forwardEndpoint);
-
-while (true)
-{
-    var peer = await listener.AcceptTcpClientAsync();
-
-    _ = Task.Run(async () =>
-    {
-        try
-        {
-            var session = new Session(peer, forwardEndpoint);
-
-            await session.RunAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Encountered an exception");
-        }
-        finally
-        {
-            peer.Dispose();
-        }
-    });
-}
+await Task.Delay(-1);
