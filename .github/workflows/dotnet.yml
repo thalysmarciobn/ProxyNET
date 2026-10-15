@@ -38,7 +38,7 @@ jobs:
         dotnet-version: 9.0.x
 
     - name: Publish for Linux
-      run: dotnet publish -c Release -r linux-x64 --self-contained true -o ./publish/linux
+      run: dotnet publish ProxyNET.csproj -c Release -r linux-x64 --self-contained true -o ./publish/linux
 
     - name: Compress Linux Artifact
       run: |
@@ -63,7 +63,7 @@ jobs:
         dotnet-version: 9.0.x
 
     - name: Publish for Windows
-      run: dotnet publish -c Release -r win-x64 --self-contained true -o ./publish/windows
+      run: dotnet publish ProxyNET.csproj -c Release -r win-x64 --self-contained true -o ./publish/windows
 
     - name: Compress Windows Artifact
       run: |
@@ -79,8 +79,12 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     needs: [publish-linux, publish-windows]
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Download Linux Artifact
       uses: actions/download-artifact@v4
@@ -107,21 +111,8 @@ jobs:
         tag_name: ${{ steps.bump.outputs.new_tag }}
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload Linux Artifact to Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.bump.outputs.new_tag }}
-        files: ./compressed/linux-artifact.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload Windows Artifact to Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.bump.outputs.new_tag }}
-        files: ./compressed/windows-artifact.zip
+        files: |
+          ./compressed/linux-artifact.zip
+          ./compressed/windows-artifact.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
