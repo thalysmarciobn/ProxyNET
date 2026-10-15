@@ -8,6 +8,8 @@
         <RootNamespace>ProxyNET</RootNamespace>
         <InvariantGlobalization>true</InvariantGlobalization>
         <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+        <ServerGarbageCollection>true</ServerGarbageCollection>
+        <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     </PropertyGroup>
 
     <ItemGroup>

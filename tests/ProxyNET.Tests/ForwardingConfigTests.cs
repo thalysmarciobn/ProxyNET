@@ -126,9 +126,71 @@ public class ForwardingConfigTests
         Assert.Equal(expected, ForwardingConfig.ToTimeoutMilliseconds(configured));
     }
 
+
     [Fact]
-    public void ConnectTimeout_HasADefault()
+    public void Validate_NegativeIdleTimeout_IsReported()
     {
-        Assert.Equal(ForwardingConfig.DefaultConnectTimeout, ValidConfig().ConnectTimeout);
+        var config = ValidConfig();
+
+        config.IdleTimeout = -1;
+
+        Assert.Contains(config.Validate(0), error => error.Contains("IdleTimeout"));
+    }
+
+    [Fact]
+    public void Validate_NegativeLimits_AreReported()
+    {
+        var config = ValidConfig();
+
+        config.MaxConnections = -1;
+        config.ReceiveBufferSize = -1;
+        config.SendBufferSize = -1;
+
+        var errors = config.Validate(0).ToList();
+
+        Assert.Contains(errors, error => error.Contains("MaxConnections"));
+        Assert.Contains(errors, error => error.Contains("ReceiveBufferSize"));
+        Assert.Contains(errors, error => error.Contains("SendBufferSize"));
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0)]
+    [InlineData(0, 4000, 4000)]
+    [InlineData(9000, 0, 9000)]
+    [InlineData(9000, 4000, 9000)]
+    public void EffectiveIdleTimeout_FallsBackToTheLegacyReadTimeout(int idleTimeout, int readTimeout, int expected)
+    {
+        var config = ValidConfig();
+
+        config.IdleTimeout = idleTimeout;
+        config.ReadTimeout = readTimeout;
+
+        Assert.Equal(expected, config.EffectiveIdleTimeout);
+    }
+
+    [Theory]
+    [InlineData(0, 0, false)]
+    [InlineData(0, 4000, true)]
+    [InlineData(9000, 4000, false)]
+    public void UsesLegacyReadTimeout_ReportsDeprecatedEntries(int idleTimeout, int readTimeout, bool expected)
+    {
+        var config = ValidConfig();
+
+        config.IdleTimeout = idleTimeout;
+        config.ReadTimeout = readTimeout;
+
+        Assert.Equal(expected, config.UsesLegacyReadTimeout);
+    }
+
+    [Fact]
+    public void Defaults_FavourPooledBuffersAndZeroByteReads()
+    {
+        var config = ValidConfig();
+
+        Assert.Equal(ForwardingConfig.DefaultBufferSize, config.BufferSize);
+        Assert.Equal(ForwardingConfig.DefaultConnectTimeout, config.ConnectTimeout);
+        Assert.True(config.WaitForData);
+        Assert.True(config.NoDelay);
+        Assert.Equal(0, config.MaxConnections);
     }
 }

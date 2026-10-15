@@ -29,6 +29,24 @@ public class ProxyServerTests
     }
 
     [Fact]
+    public async Task ForwardsDataWithoutWaitingForData()
+    {
+        await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
+        await using var proxy = new ProxyHarness(target.Port, config => config.WaitForData = false);
+
+        using var client = await ConnectAsync(proxy.Port);
+
+        var stream = client.GetStream();
+        var payload = Encoding.UTF8.GetBytes("no zero byte receive in between");
+
+        await stream.WriteAsync(payload);
+
+        var response = await ReadExactlyAsync(stream, payload.Length);
+
+        Assert.Equal(payload, response);
+    }
+
+    [Fact]
     public async Task HalfClosedPeer_StillReceivesTheResponse()
     {
         await using var target = new TestTargetServer(TestTargetServer.Mode.ReplyAfterEof);
@@ -52,12 +70,12 @@ public class ProxyServerTests
     public async Task ForwardsPayloadsLargerThanTheSessionBuffer()
     {
         await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
-        await using var proxy = new ProxyHarness(target.Port);
+        await using var proxy = new ProxyHarness(target.Port, config => config.BufferSize = 4096);
 
         using var client = await ConnectAsync(proxy.Port);
 
         var stream = client.GetStream();
-        var payload = new byte[1024 * 1024];
+        var payload = new byte[4 * 1024 * 1024];
 
         Random.Shared.NextBytes(payload);
 
@@ -70,20 +88,88 @@ public class ProxyServerTests
     }
 
     [Fact]
-    public async Task UnreachableTarget_ClosesThePeerConnection()
+    public async Task CountsSessionsAndForwardedBytes()
+    {
+        await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
+        await using var proxy = new ProxyHarness(target.Port);
+
+        using var client = await ConnectAsync(proxy.Port);
+
+        var stream = client.GetStream();
+        var payload = new byte[2 * 1024 * 1024];
+
+        Random.Shared.NextBytes(payload);
+
+        var send = stream.WriteAsync(payload).AsTask();
+
+        await ReadExactlyAsync(stream, payload.Length, TimeSpan.FromSeconds(60));
+        await send.WaitAsync(Timeout);
+
+        client.Client.Shutdown(SocketShutdown.Send);
+
+        await WaitForAsync(() => proxy.Server.ActiveSessions == 0);
+
+        var stats = proxy.Server.Stats.Snapshot();
+
+        Assert.Equal(1, stats.Accepted);
+        Assert.Equal(0, stats.Rejected);
+        Assert.Equal(0, stats.Failed);
+        Assert.Equal(payload.Length, stats.BytesToTarget);
+        Assert.Equal(payload.Length, stats.BytesToPeer);
+    }
+
+    [Fact]
+    public async Task MaxConnections_ClosesConnectionsBeyondTheLimit()
+    {
+        await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
+        await using var proxy = new ProxyHarness(target.Port, config => config.MaxConnections = 1);
+
+        using var accepted = await ConnectAsync(proxy.Port);
+
+        var acceptedStream = accepted.GetStream();
+
+        await acceptedStream.WriteAsync(Encoding.UTF8.GetBytes("first"));
+        await ReadExactlyAsync(acceptedStream, "first".Length);
+
+        using var rejected = await ConnectAsync(proxy.Port);
+
+        Assert.True(await IsClosedAsync(rejected.GetStream()));
+        await WaitForAsync(() => proxy.Server.Stats.Snapshot().Rejected == 1);
+
+        await acceptedStream.WriteAsync(Encoding.UTF8.GetBytes("still alive"));
+
+        Assert.Equal(Encoding.UTF8.GetBytes("still alive"),
+            await ReadExactlyAsync(acceptedStream, "still alive".Length));
+    }
+
+    [Fact]
+    public async Task UnreachableTarget_ClosesThePeerConnectionAndIsCounted()
     {
         await using var proxy = new ProxyHarness(GetUnusedPort());
 
         using var client = await ConnectAsync(proxy.Port);
 
         Assert.True(await IsClosedAsync(client.GetStream()));
+        await WaitForAsync(() => proxy.Server.Stats.Snapshot().Failed == 1);
     }
 
     [Fact]
-    public async Task IdleReadTimeout_ClosesTheSession()
+    public async Task IdleTimeout_AbortsTheSession()
     {
         await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
-        await using var proxy = new ProxyHarness(target.Port, config => config.ReadTimeout = 300);
+        await using var proxy = new ProxyHarness(target.Port, config => config.IdleTimeout = 500);
+
+        using var client = await ConnectAsync(proxy.Port);
+
+        Assert.True(await IsClosedAsync(client.GetStream()));
+        await WaitForAsync(() => proxy.Server.Stats.Snapshot().IdleTimeouts == 1);
+    }
+
+    [Fact]
+    public async Task LegacyReadTimeout_AbortsTheSession()
+    {
+        await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
+        await using var proxy = new ProxyHarness(target.Port, config => config.ReadTimeout = 500);
 
         using var client = await ConnectAsync(proxy.Port);
 
@@ -91,15 +177,53 @@ public class ProxyServerTests
     }
 
     [Fact]
-    public async Task Cancellation_StopsTheAcceptLoop()
+    public async Task IdleTimeout_KeepsBusySessionsAlive()
     {
         await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
-        await using var proxy = new ProxyHarness(target.Port);
+        await using var proxy = new ProxyHarness(target.Port, config => config.IdleTimeout = 1000);
+
+        using var client = await ConnectAsync(proxy.Port);
+
+        var stream = client.GetStream();
+        var payload = Encoding.UTF8.GetBytes("keep going");
+
+        for (var round = 0; round < 8; round++)
+        {
+            await stream.WriteAsync(payload);
+            await ReadExactlyAsync(stream, payload.Length);
+            await Task.Delay(300);
+        }
+
+        Assert.Equal(1, proxy.Server.ActiveSessions);
+        Assert.Equal(0, proxy.Server.Stats.Snapshot().IdleTimeouts);
+    }
+
+    [Fact]
+    public async Task WriteTimeout_IsAppliedPerWrite()
+    {
+        await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
+        await using var proxy = new ProxyHarness(target.Port, config => config.WriteTimeout = 5000);
+
+        using var client = await ConnectAsync(proxy.Port);
+
+        var stream = client.GetStream();
+        var payload = Encoding.UTF8.GetBytes("written within the deadline");
+
+        await stream.WriteAsync(payload);
+
+        Assert.Equal(payload, await ReadExactlyAsync(stream, payload.Length));
+    }
+
+    [Fact]
+    public async Task Cancellation_StopsTheServer()
+    {
+        await using var target = new TestTargetServer(TestTargetServer.Mode.Echo);
+        await using var proxy = new ProxyHarness(target.Port, config => config.IdleTimeout = 60_000);
 
         await proxy.Cancellation.CancelAsync();
-        await proxy.AcceptTask.WaitAsync(Timeout);
+        await proxy.RunTask.WaitAsync(Timeout);
 
-        Assert.True(proxy.AcceptTask.IsCompletedSuccessfully);
+        Assert.True(proxy.RunTask.IsCompletedSuccessfully);
     }
 
     [Fact]
@@ -147,11 +271,11 @@ public class ProxyServerTests
     }
 
     [Fact]
-    public async Task AcceptAsync_WithoutStart_Throws()
+    public async Task RunAsync_WithoutStart_Throws()
     {
         using var server = new ProxyServer(CreateConfig(GetUnusedPort()));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => server.AcceptAsync(CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.RunAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -194,6 +318,16 @@ public class ProxyServerTests
         probe.Stop();
 
         return port;
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = Environment.TickCount64 + (long)Timeout.TotalMilliseconds;
+
+        while (!condition() && Environment.TickCount64 < deadline)
+            await Task.Delay(25);
+
+        Assert.True(condition());
     }
 
     private static async Task<byte[]> ReadExactlyAsync(NetworkStream stream, int count, TimeSpan? timeout = null)
@@ -245,14 +379,14 @@ public class ProxyServerTests
             Server.Start();
 
             Port = Server.BoundEndpoint!.Port;
-            AcceptTask = Server.AcceptAsync(Cancellation.Token);
+            RunTask = Server.RunAsync(Cancellation.Token);
         }
 
         public ProxyServer Server { get; }
 
         public int Port { get; }
 
-        public Task AcceptTask { get; }
+        public Task RunTask { get; }
 
         public CancellationTokenSource Cancellation { get; } = new();
 
@@ -262,7 +396,7 @@ public class ProxyServerTests
 
             try
             {
-                await AcceptTask.WaitAsync(Timeout);
+                await RunTask.WaitAsync(Timeout);
             }
             catch
             {
