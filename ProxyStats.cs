@@ -44,6 +44,7 @@ public sealed class ProxyStats
     private long _idleTimeouts;
     private long _bytesToTarget;
     private long _bytesToPeer;
+    private long _lastTargetWarningTicks;
 
     /// <summary>
     /// Sessions currently being forwarded.
@@ -99,6 +100,21 @@ public sealed class ProxyStats
     /// Counts a session aborted for making no progress.
     /// </summary>
     public void OnIdleTimeout() => Interlocked.Increment(ref _idleTimeouts);
+
+    /// <summary>
+    /// Decides whether an unreachable target should be reported, so a target that is down does not turn every one
+    /// of its refused sessions into a log entry. The counters keep the full picture either way.
+    /// </summary>
+    /// <param name="intervalMilliseconds">The minimum time between two reports.</param>
+    /// <returns><c>true</c> for the caller that may report; otherwise, <c>false</c>.</returns>
+    public bool ShouldReportUnreachableTarget(int intervalMilliseconds)
+    {
+        var now = Environment.TickCount64;
+        var last = Volatile.Read(ref _lastTargetWarningTicks);
+
+        return now - last >= intervalMilliseconds &&
+               Interlocked.CompareExchange(ref _lastTargetWarningTicks, now, last) == last;
+    }
 
     /// <summary>
     /// Adds forwarded bytes to the counter of a direction.

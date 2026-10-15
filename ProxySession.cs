@@ -13,6 +13,7 @@ namespace ProxyNET;
 public sealed class ProxySession : IDisposable
 {
     private const long StatsFlushThreshold = 1024 * 1024;
+    private const int TargetWarningIntervalMilliseconds = 5000;
     private const string PeerToTargetName = "Peer -> Target";
     private const string TargetToPeerName = "Target -> Peer";
 
@@ -150,8 +151,12 @@ public sealed class ProxySession : IDisposable
         }
         catch (OperationCanceledException) when (!_shutdownToken.IsCancellationRequested)
         {
-            Log.Warning("Timed out after {Timeout} ms connecting to target at {TargetEndpoint}",
-                _config.ConnectTimeout, _forwardEndpoint);
+            if (_stats.ShouldReportUnreachableTarget(TargetWarningIntervalMilliseconds))
+                Log.Warning("Timed out after {Timeout} ms connecting to target at {TargetEndpoint}",
+                    _config.ConnectTimeout, _forwardEndpoint);
+            else
+                Log.Debug("Timed out after {Timeout} ms connecting to target at {TargetEndpoint}",
+                    _config.ConnectTimeout, _forwardEndpoint);
 
             return false;
         }
@@ -163,8 +168,12 @@ public sealed class ProxySession : IDisposable
         }
         catch (SocketException ex)
         {
-            Log.Warning("Failed to connect to target at {TargetEndpoint}. SocketErrorCode: {SocketErrorCode}",
-                _forwardEndpoint, ex.SocketErrorCode);
+            if (_stats.ShouldReportUnreachableTarget(TargetWarningIntervalMilliseconds))
+                Log.Warning("Failed to connect to target at {TargetEndpoint}. SocketErrorCode: {SocketErrorCode}",
+                    _forwardEndpoint, ex.SocketErrorCode);
+            else
+                Log.Debug("Failed to connect to target at {TargetEndpoint}. SocketErrorCode: {SocketErrorCode}",
+                    _forwardEndpoint, ex.SocketErrorCode);
 
             return false;
         }
